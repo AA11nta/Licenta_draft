@@ -1,0 +1,13 @@
+matplotlib
+scikit-learn
+seaborn
+lime==0.1.1.36
+imblearn
+tensorflow
+keras
+streamlit
+pandas
+numpy
+IPython
+qrcode
+click==8
