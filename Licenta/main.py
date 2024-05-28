@@ -1,6 +1,9 @@
+from tkinter import Image
+
 from matplotlib import pyplot as plt
 from sklearn import metrics
 from sklearn.decomposition import PCA
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix, accuracy_score, roc_curve, auc
@@ -11,6 +14,10 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.svm import SVC, LinearSVC
 from sklearn.tree import DecisionTreeClassifier
 from lime import lime_tabular
+import pandas as pd
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 import lime
 import numpy as np
@@ -139,7 +146,7 @@ if btn_afis_general:
         "Concluzii: //todo"
     )
 
-choose_MecanismAtentie = st.sidebar.button("Algoritmul PCA")
+choose_MecanismAtentie = st.sidebar.button("Algoritmi existenti")
 if choose_MecanismAtentie:
     st.header("PCA (Analiza Componentelor Principale)")
     st.write("**1) PCA detalii**")
@@ -218,99 +225,214 @@ if choose_MecanismAtentie:
     plt.title('Confusion Matrix')
     st.pyplot(plt)
 
-    st.write("**2) The attention mechanism**")
+    st.write("**2) LDA (Linear Discriminant Analysis)**")
 
-    with st.expander("The description of the mechanism"):
-        st.write("- It is a technique used to enable the model to focus on the relevant parts of the input "
-                 "data during the learning process")
-        st.write("- The primary purpose of the mechanism is to contribute to improving performance and gaining a deeper"
-                 " understanding of the input data.")
+    with st.expander("Descrierea algoritmului"):
+        st.write("- Este un algoritm de reducere a dimensiunii și de clasificare care maximizează separabilitatea dintre clase.")
 
-    with st.expander("The description of the algorithm used."):
+    # with st.expander("The description of the algorithm used."):
+    #     st.write(
+    #         "- The developed prediction model consists of two types of layers, namely: **Dense și BatchNormalization**")
+    #     st.write(
+    #         "- The **Dense** layer is used in neural networks, where each neuron in the current layer connects to all "
+    #         "neurons in the next layer. It is a fully connected layer, where each neuron receives all input values from "
+    #         "the previous layer and produces an output value.")
+    #     st.write(
+    #         "- The **BatchNormalization** layer is a layer used in deep neural networks to normalize activations"
+    #         " between layers during the training process. It was introduced to help speed up training, "
+    #         "reduce overfitting, and improve the model's generalization.")
+    # st.write("- After training the model, the following results were achieved:")
+
+    # Separate features and target
+    X = df.drop(columns=["diagnosis"])
+    Y = df["diagnosis"]
+
+    # Apply LDA
+    lda = LinearDiscriminantAnalysis(n_components=1)
+    X_lda = lda.fit_transform(X, Y)
+
+    # Convert the results to a DataFrame
+    X_lda_df = pd.DataFrame(data=X_lda, columns=['Componenta LDA 1'])
+
+    # Plot LDA
+    fig, ax = plt.subplots()
+    scatter = ax.scatter(X_lda_df['Componenta LDA 1'], [0] * len(X_lda_df), c=Y, cmap='viridis')
+    legend = ax.legend(*scatter.legend_elements(), title="Diagnostice")
+    ax.add_artist(legend)
+    plt.xlabel('Componenta LDA 1')
+    plt.ylabel('Valoare')
+    plt.title('Proiectarea LDA a datelor')
+    st.pyplot(fig)
+
+    # Split data into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+    # Apply LDA on the training set
+    X_train_lda = lda.fit_transform(X_train, y_train)
+
+    # Train a logistic regression model
+    model = LogisticRegression()
+    model.fit(X_train_lda, y_train)
+
+    # Apply LDA on the test set
+    X_test_lda = lda.transform(X_test)
+
+    # Calculate classification probabilities for the test set
+    probs = model.predict_proba(X_test_lda)
+    # Get the probability associated with class 1
+    preds = probs[:, 1]
+
+    # Calculate ROC curve and AUC
+    fpr, tpr, threshold = roc_curve(y_test, preds)
+    roc_auc = auc(fpr, tpr)
+
+    # Plot ROC curve
+    plt.figure()
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label='ROC curve (area = %0.2f)' % roc_auc)
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic')
+    plt.legend(loc="lower right")
+    st.pyplot(plt)
+
+    # Calculate predictions on the test set
+    y_pred = model.predict(X_test_lda)
+
+    # Calculate confusion matrix
+    conf_matrix = confusion_matrix(y_test, y_pred)
+
+    # Display confusion matrix
+    st.write("Matricea de confuzie:")
+    st.write(conf_matrix)
+
+    # Plot confusion matrix
+    plt.figure(figsize=(6, 4))
+    sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', cbar=False)
+    plt.xlabel('Predicted labels')
+    plt.ylabel('True labels')
+    plt.title('Confusion Matrix')
+    st.pyplot(plt)
+
+    st.write("**3) t-SNE (t-distributed Stochastic Neighbor Embedding)**")
+
+    with st.expander("Descrierea algoritmului"):
         st.write(
-            "- The developed prediction model consists of two types of layers, namely: **Dense și BatchNormalization**")
-        st.write(
-            "- The **Dense** layer is used in neural networks, where each neuron in the current layer connects to all "
-            "neurons in the next layer. It is a fully connected layer, where each neuron receives all input values from "
-            "the previous layer and produces an output value.")
-        st.write(
-            "- The **BatchNormalization** layer is a layer used in deep neural networks to normalize activations"
-            " between layers during the training process. It was introduced to help speed up training, "
-            "reduce overfitting, and improve the model's generalization.")
-    st.write("- After training the model, the following results were achieved:")
+            "- Este un algoritm de reducere a dimensiunii folosit pentru vizualizarea datelor de mare dimensiune în două sau trei dimensiuni.")
 
-    # df_nou = df[positive_features].copy()
-    # X_train_nou, X_test_nou, y_train_nou, y_test_nou = train_test_split(X_nou, y, test_size=0.2, random_state=0)
-    # model = tf.keras.Sequential([
-    #     tf.keras.layers.Dense(128, activation="relu", input_shape=([df_nou.shape[1] - 1])),
-    #     tf.keras.layers.BatchNormalization(axis=-1),
-    #     tf.keras.layers.Dense(64, activation="relu"),
-    #     tf.keras.layers.BatchNormalization(axis=-1),
-    #     tf.keras.layers.Dense(8, activation="relu"),
-    #     tf.keras.layers.Dense(1, activation="sigmoid"),
-    # ])
-    # model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-    #
-    # model.fit(X_train_nou, y_train_nou, epochs=10, batch_size=32, validation_data=(X_test_nou, y_test_nou))
+    # Load data
+    df = pd.read_csv("breast-cancer.csv")
 
-    # y_pred_nou = model.predict(X_test_nou)
-    # y_pred_nou = y_pred_nou > 0.45
-    #
-    # np.set_printoptions()
-    #
-    # cm = confusion_matrix(y_test_nou, y_pred_nou)
-    # ac = accuracy_score(y_test_nou, y_pred_nou)
-    #
-    # col1, col2 = st.columns(2, gap='large')
-    #
-    # with col1:
-    #     st.write("a) The **confusion matrix** provides a tabular representation of classification results, "
-    #              "comparing the model's predictions with the actual values of class labels.")
-    #
-    #     disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[False, True])
-    #     disp.plot()
-    #     plt.title('Confusion matrix')
-    #     plt.show()
-    #     st.pyplot()
-    #
-    #     st.write(
-    #         "1) True Positive (TP): Represents the number of instances for which the model correctly predicted "
-    #         "the positive class.")
-    #     st.write(
-    #         "2) True Negative (TN): Represents the number of instances for which the model correctly predicted"
-    #         " the negative class")
-    #     st.write(
-    #         "3) False Positive (FP): Represents the number of instances for which the model incorrectly predicted "
-    #         "the positive class (predicted it belongs to the positive class when, in reality, it doesn't)")
-    #     st.write(
-    #         "4) False Negative (FN): Represents the number of instances for which the model incorrectly \
-    #         predicted the negative class (predicted it belongs to the negative class when, in reality,"
-    #         " it belongs to the positive class).")
-    # with col2:
-    #     st.write(
-    #         "b) The ROC curve (Receiver Operating Characteristic) is a method used to evaluate the performance of a "
-    #         "binary classification model. It provides a graphical representation of the trade-off between the"
-    #         " true positive rate and the false positive rate as the model's decision thresholds are varied.")
-    #     fpr, tpr, thresholds = metrics.roc_curve(y_test_nou, y_pred_nou)
-    #     plt.axis('scaled')
-    #     plt.xlim([0.1, 0.9])
-    #     plt.ylim([0.1, 0.9])
-    #     plt.title('Curba ROC')
-    #     plt.plot(fpr, tpr, 'b')
-    #     plt.fill_between(fpr, tpr, facecolor='lightblue', alpha=0.5)
-    #     plt.ylabel('True Positive Rate')
-    #     plt.xlabel('False Positive Rate')
-    #     plt.show()
-    #     st.pyplot()
-    #
-    #     st.write(
-    #         "An ideal ROC curve approaches the upper-left corner of the graph, indicating a model with a high "
-    #         "true positive rate (TPR) and a low false positive rate (FPR).")
-    #     st.write(
-    #         "Greater AUC (Area Under the Curve) indicates better model performance.")
-    #     st.write("- The ROC curve provides a way to assess the trade-off between true positive detection rates and "
-    #              "false positive detection rates, enabling the selection of the optimal decision"
-    #              " threshold for classification.")
+    # Separate features and target
+    X = df.drop(columns=["diagnosis"])
+    Y = df["diagnosis"]
+
+    # Apply t-SNE
+    tsne = TSNE(n_components=2, random_state=42)
+    X_tsne = tsne.fit_transform(X)
+
+    # Convert the results to a DataFrame
+    X_tsne_df = pd.DataFrame(data=X_tsne, columns=['Componenta t-SNE 1', 'Componenta t-SNE 2'])
+
+    # Plot t-SNE
+    fig, ax = plt.subplots()
+    scatter = ax.scatter(X_tsne_df['Componenta t-SNE 1'], X_tsne_df['Componenta t-SNE 2'], c=Y, cmap='viridis')
+    legend = ax.legend(*scatter.legend_elements(), title="Diagnostice")
+    ax.add_artist(legend)
+    plt.xlabel('Componenta t-SNE 1')
+    plt.ylabel('Componenta t-SNE 2')
+    plt.title('Proiectarea t-SNE a datelor')
+    st.pyplot(fig)
+
+
+choose_MecanismComparatie = st.sidebar.button("Comparația Algoritmilor")
+if choose_MecanismComparatie:
+    st.header("Comparația Algoritmilor de Reducere a Dimensionalității")
+
+    # Pregătirea datelor
+    df = get_data()
+    X = df.drop(columns=["diagnosis"])
+    Y = df["diagnosis"]
+
+    # Split data into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+
+    def evaluate_model(model, X_train, X_test, y_train, y_test):
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        return accuracy
+
+
+    # Evaluare PCA
+    pca = PCA(n_components=2)
+    X_train_pca = pca.fit_transform(X_train)
+    X_test_pca = pca.transform(X_test)
+    pca_accuracy = evaluate_model(LogisticRegression(), X_train_pca, X_test_pca, y_train, y_test)
+
+    # Evaluare LDA
+    lda = LinearDiscriminantAnalysis(n_components=1)
+    X_train_lda = lda.fit_transform(X_train, y_train)
+    X_test_lda = lda.transform(X_test)
+    lda_accuracy = evaluate_model(LogisticRegression(), X_train_lda, X_test_lda, y_train, y_test)
+
+    # Evaluare t-SNE (folosit doar pentru vizualizare, nu pentru clasificare)
+    tsne = TSNE(n_components=2, random_state=42)
+    X_train_tsne = tsne.fit_transform(X_train)
+    X_test_tsne = tsne.fit_transform(X_test)
+    # Antrenarea unui model pe datele reduse cu t-SNE nu este recomandată deoarece t-SNE este destinat doar vizualizării.
+
+    # Afisarea rezultatelor
+    st.subheader("Comparația Algoritmilor de Reducere a Dimensionalității")
+
+    st.write("**Acuratețea medie obținută:**")
+    st.write(f"- PCA: {pca_accuracy * 100:.2f}%")
+    st.write(f"- LDA: {lda_accuracy * 100:.2f}%")
+
+    st.write(
+        "**Notă:** t-SNE este utilizat în principal pentru vizualizare și nu pentru antrenarea modelelor predictive, așa că nu este inclus în comparația de acuratețe.")
+
+    # Vizualizare PCA
+    st.write("**Vizualizare PCA:**")
+    fig, ax = plt.subplots()
+    scatter = ax.scatter(X_train_pca[:, 0], X_train_pca[:, 1], c=y_train, cmap='viridis')
+    legend = ax.legend(*scatter.legend_elements(), title="Diagnostice")
+    ax.add_artist(legend)
+    plt.xlabel('Componenta Principala 1')
+    plt.ylabel('Componenta Principala 2')
+    plt.title('Proiectarea PCA a datelor')
+    st.pyplot(fig)
+
+    # Vizualizare LDA
+    st.write("**Vizualizare LDA:**")
+    fig, ax = plt.subplots()
+    scatter = ax.scatter(X_train_lda, [0] * len(X_train_lda), c=y_train, cmap='viridis')
+    legend = ax.legend(*scatter.legend_elements(), title="Diagnostice")
+    ax.add_artist(legend)
+    plt.xlabel('Componenta LDA 1')
+    plt.ylabel('Valoare')
+    plt.title('Proiectarea LDA a datelor')
+    st.pyplot(fig)
+
+    # Vizualizare t-SNE
+    st.write("**Vizualizare t-SNE:**")
+    fig, ax = plt.subplots()
+    scatter = ax.scatter(X_train_tsne[:, 0], X_train_tsne[:, 1], c=y_train, cmap='viridis')
+    legend = ax.legend(*scatter.legend_elements(), title="Diagnostice")
+    ax.add_artist(legend)
+    plt.xlabel('Componenta t-SNE 1')
+    plt.ylabel('Componenta t-SNE 2')
+    plt.title('Proiectarea t-SNE a datelor')
+    st.pyplot(fig)
+
+if (btn_afis_general or ((not choose_MecanismAtentie) and (not choose_tabel) and (not choose_MecanismComparatie))):
+    from PIL import Image
+    image_path = 'img/Capture.JPG'
+    image = Image.open(image_path)
+    st.image(image, use_column_width=True)
 
 st.sidebar.write('')
 st.sidebar.write('Developer: **Andreea-Tabita Oprea**')
