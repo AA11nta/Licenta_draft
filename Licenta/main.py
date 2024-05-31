@@ -1,32 +1,20 @@
-from tkinter import Image
-
-from matplotlib import pyplot as plt
-from sklearn import metrics
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import confusion_matrix, accuracy_score, roc_curve, auc
-from sklearn.model_selection import *
-from sklearn.multiclass import OneVsRestClassifier
-from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import accuracy_score,  roc_auc_score
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from sklearn.svm import SVC, LinearSVC
-from sklearn.tree import DecisionTreeClassifier
-from lime import lime_tabular
-import pandas as pd
 from sklearn.manifold import TSNE
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix, roc_curve, auc
+import tensorflow as tf
 import matplotlib.pyplot as plt
-import seaborn as sns
-
-import lime
 import numpy as np
 import pandas as pd
-import qrcode
 import seaborn as sns
 import streamlit as st
 
-apptitle = 'Application'
+apptitle = 'BreastCancerAnalysis'
 st.set_page_config(page_title=apptitle, page_icon=":bar_chart:")
 
 hide_default_format = """
@@ -37,57 +25,124 @@ hide_default_format = """
        """
 st.markdown(hide_default_format, unsafe_allow_html=True)
 
-st.markdown(
-    """
-<style>
-.sidebar .sidebar-content {
-    background-color: #F60360 !important;
-}
-</style>
-""",
-    unsafe_allow_html=True,
-)
 
+# fișierul CSS
+def load_css(file_name):
+    with open(file_name) as f:
+        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+
+load_css('style.css')
 
 def get_data():
     return pd.read_csv('https://raw.githubusercontent.com/AA11nta/try/main/BreastCancerProject/breast-cancer.csv', header=0)
 
+def new_alg(df):
 
-# def get_data_filter():
-#     return pd.read_csv('https://raw.githubusercontent.com/tipemat/datasethoracic/main/DateToracic.csv', header=0)
+    # Define features and target
+    features = data.drop(columns=['diagnosis'])
+    target = data['diagnosis']
 
-#
-# def codQR():
-#     link = "https://cflavia-dizertatie-main-nhrwqh.streamlit.app/"  # Link-ul către aplicație
-#
-#     qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=4)
-#     qr.add_data(link)
-#     qr.make(fit=True)
-#
-#     qr_img = qr.make_image(fill_color="black", back_color="white")
-#     qr_img.save("qrcode.png")
+    # Standardize the features
+    scaler = StandardScaler()
+    features_scaled = scaler.fit_transform(features)
+
+    # Split the dataset
+    X_train, X_test, y_train, y_test = train_test_split(features_scaled, target, test_size=0.2, random_state=42)
+
+    # Define the model
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Dense(512, activation='relu', input_shape=(X_train.shape[1],)),
+        tf.keras.layers.Dense(256, activation='relu'),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(4, activation='softmax')  # Assuming 3 classes for the output
+    ])
+
+    # Compile the model
+    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+    # Train the model
+    history = model.fit(X_train, y_train, epochs=50, validation_split=0.2, batch_size=32)
+
+    # Evaluate the model
+    loss, accuracy = model.evaluate(X_test, y_test)
+
+    # Predict probabilities
+    y_pred_probs = model.predict(X_test)
+
+    # Convert probabilities to class labels
+    y_pred = np.argmax(y_pred_probs, axis=1)
+
+    # Confusion Matrix
+    cm = confusion_matrix(y_test, y_pred)
+
+    # ROC Curve and AUC
+    fpr = {}
+    tpr = {}
+    roc_auc = {}
+
+    # Assuming the target has three classes, i.e., 0, 1, 2
+    for i in range(3):
+        fpr[i], tpr[i], _ = roc_curve(y_test, y_pred_probs[:, i], pos_label=i)
+        roc_auc[i] = auc(fpr[i], tpr[i])
 
 
-# def load_data_map():
-#     data = pd.read_csv('resources/covid.csv')
-#     data['date'] = pd.to_datetime(data['date']).dt.strftime('%Y-%m-%d')
-#     return data
+    # Plot Confusion Matrix
+    fig_cm, ax_cm = plt.subplots()
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax_cm)
+    ax_cm.set_xlabel('Predicted labels')
+    ax_cm.set_ylabel('True labels')
+    ax_cm.set_title('Confusion Matrix')
+
+    # Plot ROC curve
+    fig_roc, ax_roc = plt.subplots()
+    for i in range(3):
+        ax_roc.plot(fpr[i], tpr[i], label=f'Class {i} ROC curve (area = {roc_auc[i]:.2f})')
+    ax_roc.plot([0, 1], [0, 1], 'k--')
+    ax_roc.set_xlim([0.0, 1.0])
+    ax_roc.set_ylim([0.0, 1.05])
+    ax_roc.set_xlabel('False Positive Rate')
+    ax_roc.set_ylabel('True Positive Rate')
+    ax_roc.set_title('Receiver Operating Characteristic (ROC) Curve')
+    ax_roc.legend(loc="lower right")
 
 
-# def get_data_predict():
-#     return pd.read_csv('resources/diabetes_data_upload.csv')
+    # Display confusion matrix in Streamlit
+    st.write("### Matricea de confuzie")
+    st.pyplot(fig_cm)
 
+    # Display ROC curve in Streamlit
+    st.write("### Curba ROC")
+    st.pyplot(fig_roc)
+
+    st.write("### Acuratețea")
+    st.write(f"Rezultat: {accuracy:.2f}")
+    st.line_chart(history.history['accuracy'])
+    st.line_chart(history.history['val_accuracy'])
 
 data = get_data()
-st.sidebar.subheader("Prezentare generală a aplicației")
-btn_afis_general = st.sidebar.button("Introducere")
 
-choose_tabel = st.sidebar.button("Setul de date")
-if (choose_tabel):
+st.sidebar.subheader("Prezentare generală a Aplicației")
+
+btn_Introducere = st.sidebar.button("Introducere")
+if btn_Introducere:
+    st.title("Analiza Seturilor de Date pentru Cancerul Mamar: Abordări Avansate cu Inteligență Artificială")
+    st.write(
+        "În era digitală modernă, inteligența artificială (IA) joacă un rol crucial în îmbunătățirea diagnosticului medical și a tratamentelor personalizate. Una dintre cele mai provocatoare domenii de aplicare a acestor tehnologii este în diagnosticul și predicția cancerului mamar, o boală care afectează anual milioane de femei la nivel global. Proiectul de față își propune să dezvolte și să implementeze un model de rețea neuronală capabil să analizeze și să clasifice datele despre cancerul mamar, utilizând seturi de date publice și metode avansate de învățare automată."
+        "\n\n"
+        "Aplicația construită pentru acest proiect folosește un algoritm de rețea neuronală pentru a prelucra datele și a oferi predicții precise. Prin standardizarea caracteristicilor și utilizarea unor straturi multiple de rețea neuronală, modelul nostru poate învăța modele complexe și relații între datele de intrare și diagnosticul de ieșire. Pe lângă modelul principal, aplicația permite încărcarea și antrenarea altor seturi de date, oferind flexibilitate și extensibilitate în utilizare."
+        "\n\n"
+        "Acest proiect nu doar că demonstrează potențialul rețelelor neuronale în domeniul medical, dar și accentuează importanța prelucrării și analizei corecte a datelor pentru a obține rezultate fiabile și aplicabile în practica clinică. În continuare, vom detalia metodologia utilizată, structura modelului propus, rezultatele obținute și perspectivele de viitor ale acestei tehnologii în diagnosticul cancerului mamar."
+        "\n"
+        "\n"
+    )
+
+choose_Tabel = st.sidebar.button("Setul de date")
+if (choose_Tabel):
     st.subheader("Setul de date")
     st.write(
         "Setul de date Breast Cancer de pe Kaggle, furnizat de Yasser Hesham, include informații despre diverse caracteristici ale tumorilor mamare."
-        
+        "\n\n"
         "Setul de date este utilizat pentru clasificare binară pentru a prezice dacă o tumoră este malignă sau benignă. Caracteristicile includ atribute precum raza, textura, perimetrul, aria, netezimea și altele.")
     df = get_data()
     # df = df.drop(columns="No")
@@ -99,16 +154,15 @@ if (choose_tabel):
     sns.countplot(x='diagnosis', data=df, palette='hls')
     st.pyplot(fig)
 
-    # df.rename(columns={'Sem0l1 ': 'Sem0l1'}, inplace=True)
-
     for col in df.columns:
         df.loc[(df["diagnosis"] == 0) & (df[col].isnull()), col] = df[df["diagnosis"] == 0][col].median()
         df.loc[(df["diagnosis"] == 1) & (df[col].isnull()), col] = df[df["diagnosis"] == 1][col].median()
     st.write(
         "<div style='text-align:justify;font-size: 16px;'>Mai jos puteți vizualiza histograma cu valorile pentru fiecare dintre componentele care influențează diagnosticul."
-        "<li>Cu cât punctele sunt mai răspândite, cu atât valorile sunt mai diverse. Locurile în care sunt strâns legate indică faptul că valorile respective sunt apropiate, reprezentând o majoritate.</li>"
-        "<li style='color: red'>diagnosis: 0.0 - Persoane care au tumoare maligna</li>"
-        "<li style='color: blue'>diagnosis: 1.0 - Persoane care au tumoare beligna</li></div>",
+        "\n"
+        "Cu cât punctele sunt mai răspândite, cu atât valorile sunt mai diverse. Locurile în care sunt strâns legate indică faptul că valorile respective sunt apropiate, reprezentând o majoritate."
+        "<li style='color: #7e3e4f'>diagnosis: 0 - Persoane care au tumoare maligna</li>"
+        "<li style='color: #3e517e'>diagnosis: 1 - Persoane care au tumoare beligna</li></div>",
         unsafe_allow_html=True)
     fig, axes = plt.subplots(9, 1, figsize=(20, 5))
 
@@ -132,118 +186,97 @@ if (choose_tabel):
     plt.show()
     st.pyplot(fig)
 
-if btn_afis_general:
-    st.title("Analiza Seturilor de Date pentru Cancerul Mamar: Abordări Avansate cu Inteligență Artificială")
-    st.write(
 
-        "Introducere: În ultimii ani, analiza seturilor de date medicale a devenit o componentă esențială în domeniul sănătății, oferind posibilitatea de a îmbunătăți diagnosticarea și tratamentul bolilor. Cancerul mamar, fiind una dintre cele mai comune forme de cancer la femei, beneficiază semnificativ de pe urma acestor tehnologii avansate."
-        "\n\n"
-        "Metode: Această lucrare prezintă un studiu comparativ între algoritmii de reducere a dimensionalității pentru analiza seturilor de date referitoare la cancerul mamar. În special, se analizează utilizarea Analizei Componentelor Principale (PCA) și un alt algoritm avansat de inteligență artificială. Studiul urmărește să identifice avantajele și dezavantajele fiecărei metode, bazându-se pe experimentele realizate. Rezultatele obținute subliniază eficiența fiecărei abordări în contextul diagnosticării cancerului mamar."
-        "\n\n"
-        "Rezultate: Precizia modelelor antrenate în acest mod a atins valoarea de peste 80% pentru ambele sarcini clinice."
-        "\n"
-        "\n"
-        "Concluzii: //todo"
-    )
+choose_Algoritmi = st.sidebar.button("Algoritmi existenti")
+if choose_Algoritmi:
+    st.title("1. PCA (Principal Component Analysis)")
 
-choose_MecanismAtentie = st.sidebar.button("Algoritmi existenti")
-if choose_MecanismAtentie:
-    st.header("PCA (Analiza Componentelor Principale)")
-    st.write("**1) PCA detalii**")
-
-    with st.expander("Definirea algoritmului:"):
+    with st.expander("Detalii algoritm:"):
         st.write("- **PCA (Principal Component Analysis)** este o tehnică de reducere a dimensiunii datelor folosită în analiza statistică și în învățarea automată. Scopul principal al PCA este de a transforma un set mare de variabile corelate într-un set mai mic de variabile necorelate, numite componente principale.")
         st.write("- Folosirea PCA (Principal Component Analysis) oferă multiple **avantaje** în analiza datelor și învățarea automată. În primul rând, reduce dimensiunea datelor păstrând variabilitatea esențială, ceea ce simplifică analiza și vizualizarea și reduce timpul și resursele computaționale necesare. De asemenea, elimină redundanța informațiilor prin combinarea variabilelor corelate în componente principale necorelate, rezultând modele mai eficiente și mai rapide. PCA îmbunătățește performanța algoritmilor de învățare automată, reducând riscul de overfitting și crescând acuratețea modelelor. Facilitează vizualizarea datelor multidimensionale în două sau trei dimensiuni, ajutând la identificarea tiparelor, grupurilor sau outlier-ilor. Permite compresia datelor, economisind spațiu de stocare și păstrând informațiile relevante. PCA este utilizată ca un pas de preprocesare pentru a îmbunătăți calitatea datelor și a facilita antrenarea modelelor și ajută la reducerea zgomotului, extrăgând componentele principale care reprezintă cele mai semnificative variații, îmbunătățind claritatea și relevanța datelor. Aceste avantaje fac din PCA un instrument valoros în analiza datelor și dezvoltarea modelelor predictive, mai ales pentru seturile de date mari și complexe.")
-    st.write("**Rezultatele obtinute dupa aplicarea algoritmului PCA**")
-    st.write("- Așa cum se poate observa din diagrama de mai jos, există caracteristici care contribuie semnificativ la "
-             "obținerea unei predicții mai bune pentru cancerul mamar.")
-    df = get_data()
-    # Separate features and target
-    X = df.drop(columns=["diagnosis"])
-    Y = df["diagnosis"]
 
-    # Apply PCA
-    pca = PCA(n_components=2)
-    X_pca = pca.fit_transform(X)
+    # Load dataset
+    data = pd.read_csv('breast-cancer.csv')
 
-    # Convert the results to a DataFrame
-    X_pca_df = pd.DataFrame(data=X_pca, columns=['Componenta Principala 1', 'Componenta Principala 2'])
+    # Preprocessing
+    X = data.drop(columns=['No', 'diagnosis'])
+    y = data['diagnosis']
 
-    # Display explained variance ratio
-    st.write("Variatia explicata de fiecare componenta principala:")
-    st.write(pca.explained_variance_ratio_)
+    # Standardize the features
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
-    # Split data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+    # PCA Implementation
+    pca = PCA(n_components=2)  # Reduce to 2 components for visualization
+    X_pca = pca.fit_transform(X_scaled)
 
-    # Apply PCA on the training set
-    X_train_pca = pca.fit_transform(X_train)
+    # Train-Test Split
+    X_train, X_test, y_train, y_test = train_test_split(X_pca, y, test_size=0.3, random_state=42)
 
-    # Train a logistic regression model
-    model = LogisticRegression()
-    model.fit(X_train_pca, y_train)
+    # Train Logistic Regression Classifier
+    classifier = LogisticRegression()
+    classifier.fit(X_train, y_train)
 
-    # Apply PCA on the test set
-    X_test_pca = pca.transform(X_test)
+    # Predictions and Evaluation
+    y_pred = classifier.predict(X_test)
+    y_prob = classifier.predict_proba(X_test)[:, 1]
 
-    # Calculate classification probabilities for the test set
-    probs = model.predict_proba(X_test_pca)
-    # Get the probability associated with class 1
-    preds = probs[:, 1]
+    # Compute ROC curve and ROC area
+    fpr, tpr, _ = roc_curve(y_test, y_prob)
+    roc_auc = roc_auc_score(y_test, y_prob)
 
-    # Calculate ROC curve and AUC
-    fpr, tpr, threshold = roc_curve(y_test, preds)
-    roc_auc = auc(fpr, tpr)
-
-    # Plot ROC curve
-    plt.figure()
-    plt.plot(fpr, tpr, color='red', lw=2, label='ROC curve (area = %0.2f)' % roc_auc)
-    plt.plot([0, 1], [0, 1], color='blue', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Receiver Operating Characteristic')
-    plt.legend(loc="lower right")
-    st.pyplot(plt)
-
-    # Calculate predictions on the test set
-    y_pred = model.predict(X_test_pca)
-
-    # Calculate confusion matrix
+    # Compute confusion matrix and accuracy
     conf_matrix = confusion_matrix(y_test, y_pred)
+    accuracy = accuracy_score(y_test, y_pred)
 
-    # Display confusion matrix
-    st.write("Matricea de confuzie:")
-    st.write(conf_matrix)
+    st.write("### Aplicarea algoritmului pe setul de date dat")
+    col1, col2 = st.columns(2, gap='large')
 
-    # Plot confusion matrix
-    plt.figure(figsize=(6, 4))
-    sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Reds', cbar=False)
-    plt.xlabel('Predicted labels')
-    plt.ylabel('True labels')
-    plt.title('Confusion Matrix')
-    st.pyplot(plt)
+    with col1:
+        fig, ax = plt.subplots()
+        scatter = ax.scatter(X_pca[:, 0], X_pca[:, 1], c=y, cmap='viridis')
+        legend1 = ax.legend(*scatter.legend_elements(), title="Diagnosis")
+        ax.add_artist(legend1)
+        st.pyplot(fig)
 
-    st.write("**2) LDA (Linear Discriminant Analysis)**")
+        st.write("### Matricea de confuzie")
+        # st.write(conf_matrix)
+        # Plot confusion matrix
+        plt.figure(figsize=(6, 4))
+        sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', cbar=False)
+        plt.xlabel('Predicted labels')
+        plt.ylabel('True labels')
+        plt.title('Confusion Matrix')
+        st.pyplot(plt)
 
-    with st.expander("Descrierea algoritmului"):
-        st.write("- Este un algoritm de reducere a dimensiunii și de clasificare care maximizează separabilitatea dintre clase.")
 
-    # with st.expander("The description of the algorithm used."):
-    #     st.write(
-    #         "- The developed prediction model consists of two types of layers, namely: **Dense și BatchNormalization**")
-    #     st.write(
-    #         "- The **Dense** layer is used in neural networks, where each neuron in the current layer connects to all "
-    #         "neurons in the next layer. It is a fully connected layer, where each neuron receives all input values from "
-    #         "the previous layer and produces an output value.")
-    #     st.write(
-    #         "- The **BatchNormalization** layer is a layer used in deep neural networks to normalize activations"
-    #         " between layers during the training process. It was introduced to help speed up training, "
-    #         "reduce overfitting, and improve the model's generalization.")
-    # st.write("- After training the model, the following results were achieved:")
+    with col2:
+        st.write("### Curba ROC")
+        fig, ax = plt.subplots()
+        ax.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+        ax.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        ax.set_xlim([0.0, 1.0])
+        ax.set_ylim([0.0, 1.05])
+        ax.set_xlabel('False Positive Rate')
+        ax.set_ylabel('True Positive Rate')
+        ax.set_title('Receiver Operating Characteristic')
+        ax.legend(loc="lower right")
+        st.pyplot(fig)
+
+        st.write("### Acuratețea")
+        st.write(f"Rezultat: {accuracy:.2f}")
+
+
+
+    st.title("LDA (Linear Discriminant Analysis)")
+
+    with st.expander("Detalii algoritm:"):
+        st.write("- Linear Discriminant Analysis (LDA) este o tehnică de învățare supravegheată utilizată atât pentru reducerea dimensiunii, cât și pentru clasificare. Scopul principal al LDA este de a găsi o proiecție liniară a datelor care maximizează separabilitatea între clase. Aceasta se realizează prin calcularea mediilor și matricelor de dispersie pentru fiecare clasă, urmată de identificarea vectorilor proprii care maximizează raportul dintre dispersia între clase și dispersia în interiorul clasei. Rezultatul este un set de axe pe care datele sunt proiectate, reducând dimensiunea datelor și menținând separabilitatea maximă între clase.")
+        st.write("- LDA este avantajos pentru reducerea dimensiunii, păstrând caracteristicile relevante pentru clasificare și îmbunătățind performanța clasificatorilor. Totuși, presupune că datele sunt normal distribuite și că matricile de covarianță ale claselor sunt egale, ipoteze care pot să nu fie întotdeauna îndeplinite. În ciuda acestor limitări, LDA este o metodă populară datorită eficienței și simplității sale, fiind aplicată cu succes în diverse domenii, inclusiv recunoașterea facială și bioinformatică.")
+
 
     # Separate features and target
+    df = get_data()
     X = df.drop(columns=["diagnosis"])
     Y = df["diagnosis"]
 
@@ -254,191 +287,186 @@ if choose_MecanismAtentie:
     # Convert the results to a DataFrame
     X_lda_df = pd.DataFrame(data=X_lda, columns=['Componenta LDA 1'])
 
-    # Plot LDA
-    fig, ax = plt.subplots()
-    scatter = ax.scatter(X_lda_df['Componenta LDA 1'], [0] * len(X_lda_df), c=Y, cmap='viridis')
-    legend = ax.legend(*scatter.legend_elements(), title="Diagnostice")
-    ax.add_artist(legend)
-    plt.xlabel('Componenta LDA 1')
-    plt.ylabel('Valoare')
-    plt.title('Proiectarea LDA a datelor')
-    st.pyplot(fig)
+    st.write("### Aplicarea algoritmului pe setul de date dat")
+    col1, col2 = st.columns(2, gap='large')
+    with col1:
+        # Plot LDA
+        fig, ax = plt.subplots()
+        scatter = ax.scatter(X_lda_df['Componenta LDA 1'], [0] * len(X_lda_df), c=Y, cmap='viridis')
+        legend = ax.legend(*scatter.legend_elements(), title="Diagnostice")
+        ax.add_artist(legend)
+        plt.xlabel('Componenta LDA 1')
+        plt.ylabel('Valoare')
+        plt.title('Proiectarea LDA a datelor')
+        st.pyplot(fig)
 
-    # Split data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+        # Split data into training and testing sets
+        X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
 
-    # Apply LDA on the training set
-    X_train_lda = lda.fit_transform(X_train, y_train)
+        # Apply LDA on the training set
+        X_train_lda = lda.fit_transform(X_train, y_train)
 
-    # Train a logistic regression model
-    model = LogisticRegression()
-    model.fit(X_train_lda, y_train)
+        # Train a logistic regression model
+        model = LogisticRegression()
+        model.fit(X_train_lda, y_train)
 
-    # Apply LDA on the test set
-    X_test_lda = lda.transform(X_test)
+        # Apply LDA on the test set
+        X_test_lda = lda.transform(X_test)
 
-    # Calculate classification probabilities for the test set
-    probs = model.predict_proba(X_test_lda)
-    # Get the probability associated with class 1
-    preds = probs[:, 1]
+        # Calculate classification probabilities for the test set
+        probs = model.predict_proba(X_test_lda)
+        # Get the probability associated with class 1
+        preds = probs[:, 1]
 
-    # Calculate ROC curve and AUC
-    fpr, tpr, threshold = roc_curve(y_test, preds)
-    roc_auc = auc(fpr, tpr)
+        # Calculate ROC curve and AUC
+        fpr, tpr, threshold = roc_curve(y_test, preds)
+        roc_auc = auc(fpr, tpr)
 
-    # Plot ROC curve
-    plt.figure()
-    plt.plot(fpr, tpr, color='darkorange', lw=2, label='ROC curve (area = %0.2f)' % roc_auc)
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Receiver Operating Characteristic')
-    plt.legend(loc="lower right")
-    st.pyplot(plt)
+        # Calculate predictions on the test set
+        y_pred = model.predict(X_test_lda)
 
-    # Calculate predictions on the test set
-    y_pred = model.predict(X_test_lda)
+        # Calculate confusion matrix
+        conf_matrix = confusion_matrix(y_test, y_pred)
 
-    # Calculate confusion matrix
-    conf_matrix = confusion_matrix(y_test, y_pred)
+        # Display confusion matrix
+        st.write("### Matricea de confuzie")
+        # st.write(conf_matrix)
 
-    # Display confusion matrix
-    st.write("Matricea de confuzie:")
-    st.write(conf_matrix)
+        # Plot confusion matrix
+        plt.figure(figsize=(6, 4))
+        sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', cbar=False)
+        plt.xlabel('Predicted labels')
+        plt.ylabel('True labels')
+        plt.title('Confusion Matrix')
+        st.pyplot(plt)
 
-    # Plot confusion matrix
-    plt.figure(figsize=(6, 4))
-    sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', cbar=False)
-    plt.xlabel('Predicted labels')
-    plt.ylabel('True labels')
-    plt.title('Confusion Matrix')
-    st.pyplot(plt)
+    with col2:
 
-    st.write("**3) t-SNE (t-distributed Stochastic Neighbor Embedding)**")
+        st.write("### Curba ROC")
+        # Plot ROC curve
+        plt.figure()
+        plt.plot(fpr, tpr, color='darkorange', lw=2, label='ROC curve (area = %0.2f)' % roc_auc)
+        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Receiver Operating Characteristic')
+        plt.legend(loc="lower right")
+        st.pyplot(plt)
 
-    with st.expander("Descrierea algoritmului"):
+        accuracy = accuracy_score(y_test, y_pred)
+        st.write("### Acuratețea:")
+        st.write(f"Rezultat: {accuracy:.2f}")
+
+    st.title("t-SNE (t-distributed Stochastic Neighbor Embedding)")
+
+    with st.expander("Detalii algoritm:"):
         st.write(
-            "- Este un algoritm de reducere a dimensiunii folosit pentru vizualizarea datelor de mare dimensiune în două sau trei dimensiuni.")
+            "- t-SNE (t-distributed Stochastic Neighbor Embedding) este o tehnică de reducere a dimensiunii utilizată în principal pentru vizualizarea datelor de înaltă dimensiune. Dezvoltată de Laurens van der Maaten și Geoffrey Hinton, t-SNE mapează datele de înaltă dimensiune într-un spațiu cu două sau trei dimensiuni, păstrând relațiile de proximitate între punctele de date. Algoritmul folosește o distribuție t-student pentru a modela distanțele mari, ceea ce ajută la gestionarea mai eficientă a aglomerărilor și la evitarea suprapunerii punctelor în reprezentările bidimensionale sau tridimensionale.")
 
     # Load data
     df = pd.read_csv("breast-cancer.csv")
 
-    # Separate features and target
-    X = df.drop(columns=["diagnosis"])
-    Y = df["diagnosis"]
+    # Preprocessing
+    X = data.drop(columns=['No', 'diagnosis'])
+    y = data['diagnosis']
 
-    # Apply t-SNE
+    # Standardize the features
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # t-SNE Implementation
     tsne = TSNE(n_components=2, random_state=42)
-    X_tsne = tsne.fit_transform(X)
+    X_tsne = tsne.fit_transform(X_scaled)
 
-    # Convert the results to a DataFrame
-    X_tsne_df = pd.DataFrame(data=X_tsne, columns=['Componenta t-SNE 1', 'Componenta t-SNE 2'])
+    # Train-Test Split
+    X_train, X_test, y_train, y_test = train_test_split(X_tsne, y, test_size=0.3, random_state=42)
 
-    # Plot t-SNE
-    fig, ax = plt.subplots()
-    scatter = ax.scatter(X_tsne_df['Componenta t-SNE 1'], X_tsne_df['Componenta t-SNE 2'], c=Y, cmap='viridis')
-    legend = ax.legend(*scatter.legend_elements(), title="Diagnostice")
-    ax.add_artist(legend)
-    plt.xlabel('Componenta t-SNE 1')
-    plt.ylabel('Componenta t-SNE 2')
-    plt.title('Proiectarea t-SNE a datelor')
-    st.pyplot(fig)
+    # Train Logistic Regression Classifier
+    classifier = LogisticRegression()
+    classifier.fit(X_train, y_train)
 
+    # Predictions and Evaluation
+    y_pred = classifier.predict(X_test)
+    y_prob = classifier.predict_proba(X_test)[:, 1]
 
-choose_MecanismComparatie = st.sidebar.button("Comparația Algoritmilor")
-if choose_MecanismComparatie:
-    st.header("Comparația Algoritmilor de Reducere a Dimensionalității")
+    # Compute ROC curve and ROC area
+    fpr, tpr, _ = roc_curve(y_test, y_prob)
+    roc_auc = roc_auc_score(y_test, y_prob)
 
-    # Pregătirea datelor
+    # Compute confusion matrix and accuracy
+    conf_matrix = confusion_matrix(y_test, y_pred)
+    accuracy = accuracy_score(y_test, y_pred)
+
+    st.write("### Aplicarea algoritmului pe setul de date dat")
+    col1, col2 = st.columns(2, gap='large')
+    with col1:
+        fig, ax = plt.subplots()
+        scatter = ax.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='viridis')
+        legend1 = ax.legend(*scatter.legend_elements(), title="Diagnosis")
+        ax.add_artist(legend1)
+        st.pyplot(fig)
+
+        st.write("### Matricea de confuzie")
+        # st.write(conf_matrix)
+        # Plot confusion matrix
+        plt.figure(figsize=(6, 4))
+        sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', cbar=False)
+        plt.xlabel('Predicted labels')
+        plt.ylabel('True labels')
+        plt.title('Confusion Matrix')
+        st.pyplot(plt)
+
+    with col2:
+        st.write("### Curba ROC")
+        fig, ax = plt.subplots()
+        ax.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+        ax.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        ax.set_xlim([0.0, 1.0])
+        ax.set_ylim([0.0, 1.05])
+        ax.set_xlabel('False Positive Rate')
+        ax.set_ylabel('True Positive Rate')
+        ax.set_title('Receiver Operating Characteristic')
+        ax.legend(loc="lower right")
+        st.pyplot(fig)
+
+        st.write("### Acuratețea")
+        st.write(f"Rezultat: {accuracy:.2f}")
+
+choose_MecanismReteaNeuronala = st.sidebar.button("Model de Rețea Neuronală")
+if choose_MecanismReteaNeuronala:
+    st.header("Crearea și antrenarea modelului de rețea neuronală")
+    with st.expander("Descrierea algoritmului"):
+        st.write("- Algoritmul este un proces de învățare automată destinat clasificării datelor utilizând o rețea neuronală artificială. Începe prin preprocesarea datelor, unde caracteristicile sunt extrase și standardizate pentru a asigura o scalare consistentă. Apoi, datele sunt împărțite în seturi de antrenament și testare pentru a permite evaluarea performanței modelului.")
+        st.write("- Rețeaua neuronală este definită utilizând biblioteca TensorFlow/Keras, constând dintr-un model secvențial cu mai multe straturi dense (fully connected). Fiecare strat folosește funcția de activare ReLU pentru a introduce non-linearități, în timp ce stratul final folosește funcția de activare softmax pentru a produce probabilitățile de clasificare pentru cele trei clase presupuse. Modelul este compilat folosind optimizatorul Adam și funcția de pierdere sparse_categorical_crossentropy, potrivită pentru problemele de clasificare multi-clasă. Modelul este antrenat pe datele de antrenament, iar performanța sa este evaluată pe datele de testare.")
+        st.write("- După antrenare, modelul este evaluat folosind diverse metrici, inclusiv acuratețea și matricea de confuzie, pentru a evalua performanța clasificării. De asemenea, sunt generate curbele ROC (Receiver Operating Characteristic) și valorile AUC (area under the curve) pentru fiecare clasă, oferind o evaluare detaliată a capacității modelului de a diferenția între clase. ")
+
+    # Load the dataset
     df = get_data()
-    X = df.drop(columns=["diagnosis"])
-    Y = df["diagnosis"]
+    new_alg(df)
 
-    # Split data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+choose_ModelNou = st.sidebar.checkbox("Antrenează un alt set de date")
+if choose_ModelNou:
+    st.header("Set de date încărcat de utilizator")
+    uploaded_file = st.file_uploader("*Alege un fisier", type=['csv'])
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+        st.write("- Fisiserul încărcat:")
+        st.write(df)
+        new_alg(df)
 
+if (( not btn_Introducere) and (not choose_Algoritmi) and (not choose_Tabel) and (not choose_ModelNou) and (not choose_MecanismReteaNeuronala)):
+    st.title("Analiza Seturilor de Date pentru Cancerul Mamar: Abordări Avansate cu Inteligență Artificială")
 
-    def evaluate_model(model, X_train, X_test, y_train, y_test):
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-        accuracy = accuracy_score(y_test, y_pred)
-        return accuracy
-
-
-    # Evaluare PCA
-    pca = PCA(n_components=2)
-    X_train_pca = pca.fit_transform(X_train)
-    X_test_pca = pca.transform(X_test)
-    pca_accuracy = evaluate_model(LogisticRegression(), X_train_pca, X_test_pca, y_train, y_test)
-
-    # Evaluare LDA
-    lda = LinearDiscriminantAnalysis(n_components=1)
-    X_train_lda = lda.fit_transform(X_train, y_train)
-    X_test_lda = lda.transform(X_test)
-    lda_accuracy = evaluate_model(LogisticRegression(), X_train_lda, X_test_lda, y_train, y_test)
-
-    # Evaluare t-SNE (folosit doar pentru vizualizare, nu pentru clasificare)
-    tsne = TSNE(n_components=2, random_state=42)
-    X_train_tsne = tsne.fit_transform(X_train)
-    X_test_tsne = tsne.fit_transform(X_test)
-    # Antrenarea unui model pe datele reduse cu t-SNE nu este recomandată deoarece t-SNE este destinat doar vizualizării.
-
-    # Afisarea rezultatelor
-    st.subheader("Comparația Algoritmilor de Reducere a Dimensionalității")
-
-    st.write("**Acuratețea medie obținută:**")
-    st.write(f"- PCA: {pca_accuracy * 100:.2f}%")
-    st.write(f"- LDA: {lda_accuracy * 100:.2f}%")
-
-    st.write(
-        "**Notă:** t-SNE este utilizat în principal pentru vizualizare și nu pentru antrenarea modelelor predictive, așa că nu este inclus în comparația de acuratețe.")
-
-    # Vizualizare PCA
-    st.write("**Vizualizare PCA:**")
-    fig, ax = plt.subplots()
-    scatter = ax.scatter(X_train_pca[:, 0], X_train_pca[:, 1], c=y_train, cmap='viridis')
-    legend = ax.legend(*scatter.legend_elements(), title="Diagnostice")
-    ax.add_artist(legend)
-    plt.xlabel('Componenta Principala 1')
-    plt.ylabel('Componenta Principala 2')
-    plt.title('Proiectarea PCA a datelor')
-    st.pyplot(fig)
-
-    # Vizualizare LDA
-    st.write("**Vizualizare LDA:**")
-    fig, ax = plt.subplots()
-    scatter = ax.scatter(X_train_lda, [0] * len(X_train_lda), c=y_train, cmap='viridis')
-    legend = ax.legend(*scatter.legend_elements(), title="Diagnostice")
-    ax.add_artist(legend)
-    plt.xlabel('Componenta LDA 1')
-    plt.ylabel('Valoare')
-    plt.title('Proiectarea LDA a datelor')
-    st.pyplot(fig)
-
-    # Vizualizare t-SNE
-    st.write("**Vizualizare t-SNE:**")
-    fig, ax = plt.subplots()
-    scatter = ax.scatter(X_train_tsne[:, 0], X_train_tsne[:, 1], c=y_train, cmap='viridis')
-    legend = ax.legend(*scatter.legend_elements(), title="Diagnostice")
-    ax.add_artist(legend)
-    plt.xlabel('Componenta t-SNE 1')
-    plt.ylabel('Componenta t-SNE 2')
-    plt.title('Proiectarea t-SNE a datelor')
-    st.pyplot(fig)
-
-if (btn_afis_general or ((not choose_MecanismAtentie) and (not choose_tabel) and (not choose_MecanismComparatie))):
-    from PIL import Image
-    image_path = 'img/Capture.JPG'
-    image = Image.open(image_path)
-    st.image(image, use_column_width=True)
 
 st.sidebar.write('')
-st.sidebar.write('Developer: **Andreea-Tabita Oprea**')
+st.sidebar.write('Student: **Andreea-Tabita Oprea**')
 st.sidebar.write('Prof.: **Conf. Dr. Habil. Darian M. Onchiș**')
 st.sidebar.write(
-    "Universitatea de Vest Timisoara - Facultatea de Matematica și Informatica" + '\n')
-st.sidebar.image('img/Logo-emblema-UVT-14.png', width=55)
+    "Universitatea de Vest Timisoara - Facultatea de Matematica și Informatica" )
+
 st.sidebar.write('2023-2024')
+
+st.sidebar.image('img/Logo-emblema-UVT-14.png', width=100)
 st.set_option('deprecation.showPyplotGlobalUse', False)
